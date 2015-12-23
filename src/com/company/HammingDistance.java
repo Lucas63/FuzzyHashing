@@ -1,7 +1,7 @@
 package com.company;
 
 /**
- * Created by lucas63 on 23.12.15.
+ * Created by lucas63 on 15.12.15.
  */
 public class HammingDistance {
     public static double distance(String s1,String s2)
