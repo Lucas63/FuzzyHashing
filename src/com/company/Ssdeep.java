@@ -5,41 +5,17 @@ package com.company;
  */
 public class Ssdeep {
 
-    public static void main (String[] args) {
-
-        String s1 = "Play\n";
-        String s2 = "Padd\n";
-
-        Ssdeep s = new Ssdeep();
-
-        System.out.println(s.HashString(s1));
-        System.out.println(s.Left());
-
-        System.out.println(s.HashString(s2));
-        System.out.println(HammingDistance.distance(s.HashString(s1),s.HashString(s2)));
-    }
-
-    protected static final long HASH_PRIME = 0x01000193;
-    protected static final long HASH_INIT = 0x28021967;
-    protected static final char[] B64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/".toCharArray();
-
-    // The original algorithm works using UINT32 => 2 ^ 32
-    protected static final long UINT32 = (long)2 << 31;
-
-
-    protected int MIN_BLOCKSIZE = 3;
-    protected int SPAMSUM_LENGTH = 64;
-    protected int CHARACTERS = 64;
-
+    protected long[] rollingWindow;
+    protected long rollingH1;
+    protected long rollingH2;
+    protected long rollingH3;
+    protected long rollingN;
     protected int blocksize;
     protected char[] left;
     protected char[] right;
 
-
-
     /**
      * Computes and returns the spamsum signature of this string.
-     * E.g. : 3:hMCEqNE0M+YFFWV5wdgHMyA8FNzs1b:hujkYFFWV51HM8Lzs1b
      * The block size is automatically computed
      *
      * @param string
@@ -51,7 +27,6 @@ public class Ssdeep {
 
     /**
      * Computes and returns the spamsum signature of this string.
-     * E.g. : 3:hMCEqNE0M+YFFWV5wdgHMyA8FNzs1b:hujkYFFWV51HM8Lzs1b
      *
      * @param string
      * @param bsize block size; if 0, the block size is automatically computed
@@ -64,103 +39,64 @@ public class Ssdeep {
 
         if (bsize == 0) {
             /* guess a reasonable block size */
-            blocksize = MIN_BLOCKSIZE;
-            while (blocksize * SPAMSUM_LENGTH < length) {
+            blocksize = Parameters.getMinBlocksize();
+            while (blocksize * Parameters.getSpamsumLength() < length) {
                 blocksize = blocksize * 2;
             }
-
-
         } else {
             blocksize = bsize;
         }
 
-
         while (true) {
-
-
-            left = new char[SPAMSUM_LENGTH];
-            right = new char[SPAMSUM_LENGTH];
-
-
+            left = new char[Parameters.getSpamsumLength()];
+            right = new char[Parameters.getSpamsumLength()];
             int k = 0;
             int j = 0;
-            long h3 = HASH_INIT;
-            long h2 = HASH_INIT;
-            long h = rolling_hash_reset();
+            long h3 = Parameters.getHashInit();
+            long h2 = Parameters.getHashInit();
+            long h = rollingHashReset();
 
 
             for (int i = 0; i < length; i++) {
-
-
-                /* at each character we update the rolling hash and the normal
-                 * hash. When the rolling hash hits the reset value then we emit
-                 * the normal hash as a element of the signature and reset both
-                 * hashes
-                 */
-
                 int character = (in[i] + 256) % 256;
-                h = rolling_hash(character);
-                h2 = sum_hash(character, h2);
-                h3 = sum_hash(character, h3);
-
+                h = rollingHash(character);
+                h2 = sumHash(character, h2);
+                h3 = sumHash(character, h3);
 
                 if (h % blocksize == (blocksize - 1)) {
+                    left[j] = Parameters.getB64()[(int) (h2 % Parameters.getCHARACTERS())];
 
-
-                    /* we have hit a reset polong. We now emit a hash which is based
-                     * on all chacaters in the piece of the string between the last
-                     * reset polong and this one
-                     */
-
-                    left[j] = B64[(int) (h2 % CHARACTERS)];
-                    if (j < SPAMSUM_LENGTH - 1) {
-
-
-                        /* we can have a problem with the tail overflowing. The easiest way
-                         * to cope with this is to only reset the second hash if we have
-                         * room for more characters in our signature. This has the effect of
-                         * combining the last few pieces of the message longo a single piece
-                         */
-                        h2 = HASH_INIT;
+                    if (j < Parameters.getSpamsumLength() - 1) {
+                        h2 = Parameters.getHashInit();
                         j++;
                     }
                 }
 
-
-                /* this produces a second signature with a block size of block_size*2.
-                 * By producing dual signatures in this way the effect of small changes
-                 * in the string near a block size boundary is greatly reduced.
-                 */
                 if (h % (blocksize * 2) == ((blocksize * 2) - 1)) {
-                    right[k] = B64[(int) (h3 % CHARACTERS)];
-                    if (k < SPAMSUM_LENGTH / 2 - 1) {
-                        h3 = HASH_INIT;
+                    right[k] = Parameters.getB64()[(int) (h3 % Parameters.getCHARACTERS())];
+                    if (k < Parameters.getSpamsumLength() / 2 - 1) {
+                        h3 = Parameters.getHashInit();
                         k++;
                     }
                 }
             }
 
-
-            /* If we have anything left then add it to the end. This ensures that the
-             * last part of the string is always considered
-             */
             if (h != 0) {
-                left[j] = B64[(int) (h2 % CHARACTERS)];
-                right[k] = B64[(int) (h3 % CHARACTERS)];
+                left[j] = Parameters.getB64()[(int) (h2 % Parameters.getCHARACTERS())];
+                right[k] = Parameters.getB64()[(int) (h3 % Parameters.getCHARACTERS())];
             }
 
-
-            /* Our blocksize guess may have been way off - repeat if necessary
-             */
             if (
                     (bsize != 0) ||                 // blocksize was manually specified
-                            (blocksize <= MIN_BLOCKSIZE) || // current blocksize is already too small
-                            (j >= SPAMSUM_LENGTH / 2)       // dividing by 2 would produce a hash too small...
-                    ) {
+                    (blocksize <= Parameters.getMinBlocksize()) || // current blocksize is already too small
+                    (j >= Parameters.getSpamsumLength() / 2)       // dividing by 2 would produce a hash too small...
+                    )
+            {
                 break;
-            } else {
+            }
+            else
+            {
                 blocksize = blocksize / 2;
-                // loop...
             }
         }
 
@@ -172,8 +108,7 @@ public class Ssdeep {
     @Override
     public String toString() {
         return "" + blocksize + ":"
-                + Left() + ":"
-                + Right();
+                + Left() + ":"+ Right();
     }
 
 
@@ -203,63 +138,41 @@ public class Ssdeep {
         return String.valueOf(right).trim();
     }
 
-
-    /* A simple non-rolling hash, based on the FNV hash
-     * http://en.wikipedia.org/wiki/Fowler%E2%80%93Noll%E2%80%93Vo_hash_function
-     */
-    protected static long sum_hash(long c, long h) {
-        h = (h * HASH_PRIME) % UINT32;
-        h = (h ^ c) % UINT32;
+    protected static long sumHash(long c, long h) {
+        h = (h * Parameters.getHashPrime()) % Parameters.getUINT32();
+        h = (h ^ c) % Parameters.getUINT32();
         return h;
     }
 
 
-    /* A rolling hash, based on the Adler checksum. By using a rolling hash
-     * we can perform auto resynchronisation after inserts/deletes longernally,
-     * h1 is the sum of the bytes in the window and h2 is the sum of the bytes
-     * times the index. h3 is a shift/xor based rolling hash, and is mostly
-     * needed to ensure that we can cope with large blocksize values
-     */
-    protected static final int ROLLING_WINDOW = 7;
+    protected long rollingHash(long c) {
+        this.rollingH2 -= this.rollingH1;
+        this.rollingH2 = (this.rollingH2 + Parameters.getRollingWindow() * c) % Parameters.getUINT32();
+
+        rollingH1 = (rollingH1 + c) % Parameters.getUINT32();
+        rollingH1 -= this.rollingWindow[(int) this.rollingN % Parameters.getRollingWindow()];
+
+        this.rollingWindow[(int) (this.rollingN % Parameters.getRollingWindow())] = c;
+        this.rollingN++;
 
 
-    protected long[] rolling_window;
-    protected long rolling_h1;
-    protected long rolling_h2;
-    protected long rolling_h3;
-    protected long rolling_n;
+        rollingH3 = ((rollingH3 << 5) & 0xFFFFFFFF) % Parameters.getUINT32();
+        rollingH3 = (rollingH3 ^ c) % Parameters.getUINT32(); // Bitwize XOR
 
-
-    protected long rolling_hash(long c) {
-        rolling_h2 -= rolling_h1;
-        rolling_h2 = (rolling_h2 + ROLLING_WINDOW * c) % UINT32;
-
-
-        rolling_h1 = (rolling_h1 + c) % UINT32;
-        rolling_h1 -= rolling_window[(int) rolling_n % ROLLING_WINDOW];
-
-
-        rolling_window[(int) (rolling_n % ROLLING_WINDOW)] = c;
-        rolling_n++;
-
-
-        rolling_h3 = ((rolling_h3 << 5) & 0xFFFFFFFF) % UINT32;
-        rolling_h3 = (rolling_h3 ^ c) % UINT32; // Bitwize XOR
-
-        return (rolling_h1 + rolling_h2 + rolling_h3) % UINT32;
+        return (rollingH1 + rollingH2 + rollingH3) % Parameters.getUINT32();
     }
 
+    /**
+     * Reset rolling hash value
+     * @return 0
+     */
+    protected long rollingHashReset() {
+        this.rollingWindow = new long[Parameters.getRollingWindow()];
 
-    protected long rolling_hash_reset() {
-        rolling_window = new long[ROLLING_WINDOW];
-
-
-        rolling_h1 = 0;
-        rolling_h2 = 0;
-        rolling_h3 = 0;
-        rolling_n = 0;
-
-
+        this.rollingH1 = 0;
+        this.rollingH2 = 0;
+        this.rollingH3 = 0;
+        this.rollingN = 0;
 
         return 0;
     }

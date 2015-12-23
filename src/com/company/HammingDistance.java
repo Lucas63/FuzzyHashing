@@ -8,7 +8,7 @@ public class HammingDistance {
     {
         double a = 0;
         double b = 0;
-        for (int x = 0; x < s1.length(); x++) { //both are of the same length
+        for (int x = 0; x < s1.length(); x++) {
             if (s1.charAt(x) == s2.charAt(x)) {
                 a += 1;
             }
